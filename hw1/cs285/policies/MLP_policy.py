@@ -101,8 +101,8 @@ class MLPPolicySL(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
         )
         self.mean_net.to(ptu.device)
         self.logstd = nn.Parameter(
-
-            torch.zeros(self.ac_dim, dtype=torch.float32, device=ptu.device)
+            torch.zeros(self.ac_dim, dtype=torch.float32, device=ptu.device),
+            requires_grad=True
         )
         self.logstd.to(ptu.device)
         self.optimizer = optim.Adam(
@@ -116,7 +116,7 @@ class MLPPolicySL(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
         """
         torch.save(self.state_dict(), filepath)
 
-    def forward(self, observation: torch.FloatTensor) -> Any:
+    def forward(self, observation: torch.FloatTensor) -> torch.FloatTensor:
         """
         Defines the forward pass of the network
 
@@ -129,7 +129,12 @@ class MLPPolicySL(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
         # through it. For example, you can return a torch.FloatTensor. You can also
         # return more flexible objects, such as a
         # `torch.distributions.Distribution` object. It's up to you!
-        raise NotImplementedError
+        policy_mean_action = self.mean_net(observation)
+        policy_std_action = torch.exp(self.logstd)
+        # 将对数标准差logstd转换为标准差std
+        policy_distribution = distributions.Normal(policy_mean_action, policy_std_action)
+        policy_action = policy_distribution.rsample()
+        return policy_action
 
     def update(self, observations, actions):
         """
@@ -140,9 +145,23 @@ class MLPPolicySL(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
         :return:
             dict: 'Training Loss': supervised learning loss
         """
-        # TODO: update the policy and return the loss
-        loss = TODO
+        # Ensure observations and actions require gradients
+        observations = observations.requires_grad_(True)
+        actions = actions.requires_grad_(True)
+
+        # Update the policy and return the loss
+        policy_actions = self.forward(observations)
+        loss = F.mse_loss(actions, policy_actions)
+        # print(actions, policy_actions, loss)
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
         return {
             # You can add extra logging information here, but keep this line
             'Training Loss': ptu.to_numpy(loss),
         }
+    
+    def get_action(self, observations):
+        with torch.no_grad():
+            action = ptu.to_numpy(self.forward(observations))
+        return ptu.from_numpy(action)
