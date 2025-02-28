@@ -39,14 +39,17 @@ def run_training_loop(args):
 
     ob_dim = env.observation_space.shape[0]
     ac_dim = env.action_space.n if discrete else env.action_space.shape[0]
+    # 判断env的动作空间是连续还是离散
 
     # simulation timestep, will be used for video saving
+    # 保存视频录像相关
     if hasattr(env, "model"):
         fps = 1 / env.model.opt.timestep
     else:
         fps = env.env.metadata["render_fps"]
 
     # initialize agent
+    # 策略梯度 Policy Gradient
     agent = PGAgent(
         ob_dim,
         ac_dim,
@@ -70,15 +73,22 @@ def run_training_loop(args):
         print(f"\n********** Iteration {itr} ************")
         # TODO: sample `args.batch_size` transitions using utils.sample_trajectories
         # make sure to use `max_ep_len`
-        trajs, envsteps_this_batch = None, None  # TODO
+        trajs, envsteps_this_batch = utils.sample_trajectories(env, agent.actor, args.batch_size, max_ep_len) 
         total_envsteps += envsteps_this_batch
 
         # trajs should be a list of dictionaries of NumPy arrays, where each dictionary corresponds to a trajectory.
         # this line converts this into a single dictionary of lists of NumPy arrays.
+        # print(trajs, trajs[0])
         trajs_dict = {k: [traj[k] for traj in trajs] for k in trajs[0]}
+        # print(trajs_dict, trajs_dict["rewards"])
 
         # TODO: train the agent using the sampled trajectories and the agent's update function
-        train_info: dict = None
+        train_info: dict = agent.update(
+            obs=trajs_dict["observation"],
+            actions=trajs_dict["action"],
+            rewards=trajs_dict["reward"],
+            terminals=trajs_dict["terminal"],
+        )
 
         if itr % args.scalar_log_freq == 0:
             # save eval metrics
@@ -152,7 +162,7 @@ def main():
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--no_gpu", "-ngpu", action="store_true")
     parser.add_argument("--which_gpu", "-gpu_id", default=0)
-    parser.add_argument("--video_log_freq", type=int, default=-1)
+    parser.add_argument("--video_log_freq", type=int, default=20)
     parser.add_argument("--scalar_log_freq", type=int, default=1)
 
     parser.add_argument("--action_noise_std", type=float, default=0)

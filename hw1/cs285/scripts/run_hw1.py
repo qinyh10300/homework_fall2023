@@ -167,6 +167,8 @@ def run_training_loop(params):
 
           # use the sampled data to train an agent
           train_log = actor.update(ptu.from_numpy(ob_batch), ptu.from_numpy(ac_batch))
+        #   print(train_log)
+        #   time.sleep(0.1)
           training_logs.append(train_log)
 
         # log/save
@@ -207,7 +209,7 @@ def run_training_loop(params):
 
             logger.flush()
 
-        if params['save_params']:
+        if params['save_params'] and itr % 100 == 0:
             print('\nSaving agent params')
             actor.save('{}/policy_itr_{}.pt'.format(params['logdir'], itr))
 

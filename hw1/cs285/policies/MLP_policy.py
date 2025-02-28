@@ -146,8 +146,8 @@ class MLPPolicySL(BasePolicy, nn.Module, metaclass=abc.ABCMeta):
             dict: 'Training Loss': supervised learning loss
         """
         # Ensure observations and actions require gradients
-        observations = observations.requires_grad_(True)
-        actions = actions.requires_grad_(True)
+        # observations = observations.requires_grad_(True)
+        # actions = actions.requires_grad_(True)
 
         # Update the policy and return the loss
         policy_actions = self.forward(observations)
