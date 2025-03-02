@@ -43,8 +43,10 @@ def basic_dqn_config(
     def make_lr_schedule(
         optimizer: torch.optim.Optimizer,
     ) -> torch.optim.lr_scheduler._LRScheduler:
+        '''创建一个学习率调度器，会保持学习率恒定（因为factor=1.0）'''
         return torch.optim.lr_scheduler.ConstantLR(optimizer, factor=1.0)
 
+    # 探索率调度器，定义探索率随时间步的变化
     exploration_schedule = PiecewiseSchedule(
         [
             (0, 1),
@@ -64,6 +66,7 @@ def basic_dqn_config(
         discount,
     )
 
+    # 是否使用双Q网络
     if use_double_q:
         log_string += "_doubleq"
 

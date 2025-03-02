@@ -36,7 +36,10 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
     exploration_schedule = config["exploration_schedule"]
     discrete = isinstance(env.action_space, gym.spaces.Discrete)
 
+    # DQN只能用于离散动作状态空间
     assert discrete, "DQN only supports discrete action spaces"
+    # print(config["agent_kwargs"])
+    # raise NotImplementedError("DQN only supports discrete action spaces")
 
     agent = DQNAgent(
         env.observation_space.shape,
@@ -58,6 +61,8 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
 
     # Replay buffer
     if len(env.observation_space.shape) == 3:
+        # 如果是3维，表示图像数据。assume有四个通道
+        # 采用帧堆叠，确保历史帧的长度为 4
         stacked_frames = True
         frame_history_len = env.observation_space.shape[0]
         assert frame_history_len == 4, "only support 4 stacked frames"
@@ -73,14 +78,14 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
         )
 
     def reset_env_training():
-        nonlocal observation
+        nonlocal observation  # 在嵌套函数中声明使用的是外层函数的变量
 
         observation = env.reset()
 
         assert not isinstance(
             observation, tuple
         ), "env.reset() must return np.ndarray - make sure your Gym version uses the old step API"
-        observation = np.asarray(observation)
+        observation = np.asarray(observation)   # 将observation转换为numpy数组
 
         if isinstance(replay_buffer, MemoryEfficientReplayBuffer):
             replay_buffer.on_reset(observation=observation[-1, ...])
@@ -91,9 +96,11 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
         epsilon = exploration_schedule.value(step)
         
         # TODO(student): Compute action
-        action = ...
+        action = agent.get_action(observation, epsilon)
 
         # TODO(student): Step the environment
+        # env.step()返回(observation, reward, done, info)
+        next_observation, reward, done, info = env.step(action)
 
         next_observation = np.asarray(next_observation)
         truncated = info.get("TimeLimit.truncated", False)
@@ -101,11 +108,25 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
         # TODO(student): Add the data to the replay buffer
         if isinstance(replay_buffer, MemoryEfficientReplayBuffer):
             # We're using the memory-efficient replay buffer,
+            # 此时observation为三维的
             # so we only insert next_observation (not observation)
-            ...
+            replay_buffer.insert(
+                action = action, 
+                reward = reward, 
+                done = done, 
+                next_observation = next_observation[-1, ...],
+            ) 
+            # 只放最后一帧图像
         else:
             # We're using the regular replay buffer
-            ...
+            # 此时observation为一维的
+            replay_buffer.insert(
+                observation=observation,
+                action=action,
+                reward=reward,
+                next_observation=next_observation,
+                done=done,
+            )
 
         # Handle episode termination
         if done:
@@ -119,13 +140,20 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
         # Main DQN training loop
         if step >= config["learning_starts"]:
             # TODO(student): Sample config["batch_size"] samples from the replay buffer
-            batch = ...
+            batch = replay_buffer.sample(config["batch_size"])
 
             # Convert to PyTorch tensors
             batch = ptu.from_numpy(batch)
 
             # TODO(student): Train the agent. `batch` is a dictionary of numpy arrays,
-            update_info = ...
+            update_info = agent.update(
+                obs = batch["observations"],
+                action = batch["actions"],
+                reward = batch["rewards"],
+                next_obs = batch["next_observations"],
+                done = batch["dones"],
+                step = step,
+            )
 
             # Logging code
             update_info["epsilon"] = epsilon

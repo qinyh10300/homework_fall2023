@@ -1,7 +1,7 @@
 from typing import Sequence, Callable, Tuple, Optional
 
 import torch
-from torch import nn
+from torch import nn, distributions
 
 import numpy as np
 
@@ -45,12 +45,24 @@ class DQNAgent(nn.Module):
         """
         Used for evaluation.
         """
+        # [None]在张量observation前加入一个新的维度，表示批次batch
         observation = ptu.from_numpy(np.asarray(observation))[None]
 
         # TODO(student): get the action from the critic using an epsilon-greedy strategy
-        action = ...
+        # epsilon-greedy策略
+        q_values = self.critic(observation)
+        best_action_index = torch.argmax(q_values, dim=-1)  # 这里dim是1和-1是一样的
+        n, m = q_values.shape  # n = 1
+        probs = torch.ones(n, m) * epsilon / (m - 1)   # 全1的张量
+        probs[torch.arange(n), best_action_index] = 1 - epsilon
+        # print(q_values.shape, torch.arange(n), best_action_index)
+        # torch.arange(n)生成一个从0到n-1的张量
+        action_distribution = distributions.Categorical(probs=probs)
+        action = action_distribution.sample()  # 离散型只有sample方法
 
         return ptu.to_numpy(action).squeeze(0).item()
+        # squeeze(0)去除张量(tensor)中所有维度大小为1的维度；这里是第一个维度batch_size
+        # item()把单一的张量变成标量（一个数字）
 
     def update_critic(
         self,
@@ -60,7 +72,7 @@ class DQNAgent(nn.Module):
         next_obs: torch.Tensor,
         done: torch.Tensor,
     ) -> dict:
-        """Update the DQN critic, and return stats for logging."""
+        """Update the DQN critic, and return stats（统计数据） for logging."""
         (batch_size,) = reward.shape
 
         # Compute target values
@@ -99,6 +111,7 @@ class DQNAgent(nn.Module):
         }
 
     def update_target_critic(self):
+        # 将评估网络的参数值给目标网络
         self.target_critic.load_state_dict(self.critic.state_dict())
 
     def update(

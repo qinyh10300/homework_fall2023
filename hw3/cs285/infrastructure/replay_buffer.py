@@ -12,6 +12,7 @@ class ReplayBuffer:
         self.dones = None
 
     def sample(self, batch_size):
+        # 生成大小为batch_size的随机整数数组，整数范围为(0, self.size)，最后对self.max_size去模
         rand_indices = np.random.randint(0, self.size, size=(batch_size,)) % self.max_size
         return {
             "observations": self.observations[rand_indices],
@@ -26,7 +27,7 @@ class ReplayBuffer:
 
     def insert(
         self,
-        /,
+        /,  # 表示/之前的函数参数为位置参数，只能通过位置传递的参数，不能通过关键字传递
         observation: np.ndarray,
         action: np.ndarray,
         reward: np.ndarray,
@@ -63,6 +64,8 @@ class ReplayBuffer:
             )
             self.dones = np.empty((self.max_size, *done.shape), dtype=done.dtype)
 
+        # 判断各个量的维度是否保持一致
+        # 检查传入函数的obs等量都是单个量，第一位不是batch_size
         assert observation.shape == self.observations.shape[1:]
         assert action.shape == self.actions.shape[1:]
         assert reward.shape == ()
@@ -80,7 +83,8 @@ class ReplayBuffer:
 
 class MemoryEfficientReplayBuffer:
     """
-    A memory-efficient version of the replay buffer for when observations are stacked.
+    A memory-efficient version of the replay buffer for when observations are stacked（堆满）.
+    适用于帧堆叠的情况，比如atari游戏的网络需要连续输入4个84*84的图像
     """
 
     def __init__(self, frame_history_len: int, capacity=1000000):
@@ -140,7 +144,7 @@ class MemoryEfficientReplayBuffer:
         Returns the index of the frame in the replay buffer.
         """
         assert (
-            frame.ndim == 2
+            frame.ndim == 2  # .ndim给出维度总数
         ), "Single-frame observation should have dimensions (H, W)"
         assert frame.dtype == np.uint8, "Observation should be uint8 (0-255)"
 
@@ -171,6 +175,7 @@ class MemoryEfficientReplayBuffer:
     ):
         """
         Call this with the first observation of a new episode.
+        相当于在reset(重置)之后调用
         """
         assert (
             observation.ndim == 2

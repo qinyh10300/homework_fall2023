@@ -17,6 +17,7 @@ import cs285.infrastructure.pytorch_util as ptu
 
 
 class PreprocessAtari(nn.Module):
+    '''预处理模块，将输入图像的像素值从[0, 255]归一化到[0, 1]'''
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         assert x.ndim in [3, 4], f"Bad observation shape: {x.shape}"
         assert x.shape[-3:] == (4, 84, 84), f"Bad observation shape: {x.shape}"
@@ -46,26 +47,28 @@ def atari_dqn_config(
             84,
         ), f"Observation shape: {observation_shape}"
 
+        # 构建CNN，用于atari环境
         return nn.Sequential(
             PreprocessAtari(),
-            nn.Conv2d(in_channels=4, out_channels=32, kernel_size=8, stride=4),
-            nn.ReLU(),
+            nn.Conv2d(in_channels=4, out_channels=32, kernel_size=8, stride=4), # 4通道CNN
+            nn.ReLU(),  #可以用cnn推出下一维度输入的通道数和形状
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2),
             nn.ReLU(),
             nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3, stride=1),
             nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(3136, 512),  # 3136 hard-coded based on img size + CNN layers
+            nn.Flatten(),  # 展平为一维向量，64*7*7=3136
+            nn.Linear(3136, 512),  # 全连接层 3136 hard-coded based on img size + CNN layers
             nn.ReLU(),
             nn.Linear(512, num_actions),
         ).to(ptu.device)
 
     def make_optimizer(params: torch.nn.ParameterList) -> torch.optim.Optimizer:
-        return torch.optim.Adam(params, lr=learning_rate, eps=adam_eps)
+        return torch.optim.Adam(params, lr=learning_rate, eps=adam_eps) # 参数eps防止除以0错误
 
     def make_lr_schedule(
         optimizer: torch.optim.Optimizer,
     ) -> torch.optim.lr_scheduler._LRScheduler:
+        # 学习率调度器，定义学习率随时间步的变化
         return torch.optim.lr_scheduler.LambdaLR(
             optimizer,
             PiecewiseSchedule(
@@ -78,6 +81,7 @@ def atari_dqn_config(
             ).value,
         )
 
+    # 探索率调度器，定义探索率随时间步的变化
     exploration_schedule = PiecewiseSchedule(
         [
             (0, 1.0),
