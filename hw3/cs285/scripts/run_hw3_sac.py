@@ -92,11 +92,11 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
             # TODO(student): Sample a batch of config["batch_size"] transitions from the replay buffer
             batch = replay_buffer.sample(config["batch_size"])
             update_info = agent.update(
-                observations = ptu.from_numpy(batch["observation"]),
-                actions = ptu.from_numpy(batch["action"]),
-                rewards = ptu.from_numpy(batch["reward"]),
-                next_observations = ptu.from_numpy(batch["next_observation"]),
-                dones = ptu.from_numpy(batch["done"]),
+                observations = ptu.from_numpy(batch["observations"]),
+                actions = ptu.from_numpy(batch["actions"]),
+                rewards = ptu.from_numpy(batch["rewards"]),
+                next_observations = ptu.from_numpy(batch["next_observations"]),
+                dones = ptu.from_numpy(batch["dones"]),
                 step = step
             )
 

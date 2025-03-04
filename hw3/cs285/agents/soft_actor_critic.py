@@ -150,12 +150,16 @@ class SoftActorCritic(nn.Module):
 
         # TODO(student): Implement the different backup strategies.
         if self.target_critic_backup_type == "doubleq":
-
-            raise NotImplementedError
+            # 相当于交换了两个critic的预测值，如果大于两个网络，那么就循环交换
+            next_qs = torch.stack([next_qs[(i+1)%num_critic_networks] for i in range(num_critic_networks)], dim=0)
+            # raise NotImplementedError
         elif self.target_critic_backup_type == "min":
-            raise NotImplementedError
+            next_qs = torch.min(next_qs, dim=0)[0]
+            # 因为会返回一个index,所以需要取[0]
+            # raise NotImplementedError
         elif self.target_critic_backup_type == "mean":
-            raise NotImplementedError
+            next_qs = torch.mean(next_qs, dim=0)
+            # raise NotImplementedError
         else:
             # Default, we don't need to do anything.
             pass
@@ -222,7 +226,7 @@ class SoftActorCritic(nn.Module):
 
         # TODO(student): Update the critic
         # Predict Q-values
-        q_values = self.critic(next_obs, next_action)
+        q_values = self.critic(obs, action)
         assert q_values.shape == (self.num_critic_networks, batch_size), q_values.shape
 
         # Compute loss
@@ -241,11 +245,21 @@ class SoftActorCritic(nn.Module):
     def entropy(self, action_distribution: torch.distributions.Distribution):
         """
         Compute the (approximate) entropy of the action distribution for each batch element.
+        这个entropy的实现是为了计算梯度，所以不能直接使用entropy()函数
         """
+        # 注意熵的计算公式：H(p) = -Σp(x)logp(x)，采样求期望
 
         # TODO(student): Compute the entropy of the action distribution.
         # Note: Think about whether to use .rsample() or .sample() here...
-        return ...
+        sample_points = 1000
+        sample_actions = action_distribution.rsample((sample_points,))  # 必须使用rsample，因为我们需要计算梯度更新action_distribution
+        # shape = (sample_points, batch_size, action_dim)
+        log_probs = action_distribution.log_prob(sample_actions)
+        # shape = (sample_points, batch_size)
+        entropy = -torch.mean(torch.sum(log_probs, dim=0))
+        # shape = (batch_size,)
+        return entropy
+        # return action_distribution.entropy() # 这样子直接返回熵值了，但是我们需要计算梯度，所以不能这样子
 
     def actor_loss_reinforce(self, obs: torch.Tensor):
         batch_size = obs.shape[0]
@@ -255,7 +269,9 @@ class SoftActorCritic(nn.Module):
 
         with torch.no_grad():
             # TODO(student): draw num_actor_samples samples from the action distribution for each batch element
-            action = ...
+            action = action_distribution.sample((self.num_actor_samples,))
+            # 这里之所以使用sample，是因为我们不需要计算梯度(前面也有torch.no_grad)，只需要采样
+            # 因为下面会使用log_prob得到应该计算梯度的部分
             assert action.shape == (
                 self.num_actor_samples,
                 batch_size,
@@ -263,7 +279,7 @@ class SoftActorCritic(nn.Module):
             ), action.shape
 
             # TODO(student): Compute Q-values for the current state-action pair
-            q_values = ...
+            q_values = self.critic(obs, action)
             assert q_values.shape == (
                 self.num_critic_networks,
                 self.num_actor_samples,
@@ -272,12 +288,15 @@ class SoftActorCritic(nn.Module):
 
             # Our best guess of the Q-values is the mean of the ensemble
             q_values = torch.mean(q_values, axis=0)
-            advantage = q_values
+            advantage = q_values  # shape = (self.num_actor_samples, batch_size,)
+            # 怎么对off-policy的advantage进行normalize呢？
+            # 之前的PG算法对on-policy的advantage的normalize
 
         # Do REINFORCE: calculate log-probs and use the Q-values
         # TODO(student)
-        log_probs = ...
-        loss = ...
+        log_probs = action_distribution.log_prob(action)
+        loss = -(log_probs * advantage).mean() # shape = (self.num_actor_samples, batch_size,)
+        # mean()函数如果不指定维度，则会对所有元素求平均值
 
         return loss, torch.mean(self.entropy(action_distribution))
 
@@ -289,13 +308,17 @@ class SoftActorCritic(nn.Module):
 
         # TODO(student): Sample actions
         # Note: Think about whether to use .rsample() or .sample() here...
-        action = ...
+        action = action_distribution.rsample((self.num_actor_samples,))
+        # shape = (self.num_actor_samples, batch_size, action_dim)
+        # 对比只采样一次，action = action_distribution.rsample()
+        # rsample()函数就是使用了reparametrize trick，可以直接计算梯度（方差比reinforce方法小，但是只适用于连续场景）
 
         # TODO(student): Compute Q-values for the sampled state-action pair
-        q_values = ...
+        q_values = self.critic(obs, action)  # 会不会对obs进行自动广播
+        # shape = (self.num_critic_networks, self.num_actor_samples, batch_size)
 
         # TODO(student): Compute the actor loss
-        loss = ...
+        loss = -q_values.mean()
 
         return loss, torch.mean(self.entropy(action_distribution))
 
@@ -346,15 +369,25 @@ class SoftActorCritic(nn.Module):
 
         critic_infos = []
         # TODO(student): Update the critic for num_critic_upates steps, and add the output stats to critic_infos
+        for _ in range(self.num_critic_updates):
+            critic_infos.append(
+                self.update_critic(
+                    observations, actions, rewards, next_observations, dones
+                )
+            )
 
         # TODO(student): Update the actor
-        actor_info = ...
+        actor_info = self.update_actor(observations)
 
         # TODO(student): Perform either hard or soft target updates.
         # Relevant variables:
         #  - step
         #  - self.target_update_period (None when using soft updates)
         #  - self.soft_target_update_rate (None when using hard updates)
+        if self.soft_target_update_rate is not None:
+            self.soft_update_target_critic(self.soft_target_update_rate)
+        elif self.target_update_period is not None and step % self.target_update_period == 0:
+            self.update_target_critic()
 
         # Average the critic info over all of the steps
         critic_info = {
