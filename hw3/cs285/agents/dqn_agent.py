@@ -76,22 +76,30 @@ class DQNAgent(nn.Module):
         (batch_size,) = reward.shape
 
         # Compute target values
+        # 如果不适用Double DQN, 则target网络不参与迭代
         with torch.no_grad():
             # TODO(student): compute target values
-            next_qa_values = ...
+            next_qa_values = self.critic(next_obs)
 
             if self.use_double_q:
-                raise NotImplementedError
+                # critic在线网络选择最优动作，target网络计算Q值
+                next_action = torch.argmax(next_qa_values, dim=-1)
+                next_q_values = self.target_critic(next_obs)[torch.arange(batch_size), next_action]
+                # 和下面的写法等价，下面使用了gather函数
+                # next_best_action_index = torch.argmax(next_qa_values,-1,keepdim=True)
+                # target_next_q_values = self.target_critic(next_obs)
+                # next_q_values = torch.gather(target_next_q_values, -1, next_best_action_index).squeeze()
             else:
-                next_action = ...
+                next_action = torch.argmax(next_qa_values, dim=-1)
+                next_q_values = next_qa_values[torch.arange(batch_size), next_action]
             
-            next_q_values = ...
-            target_values = ...
+            done = done.float()
+            target_values = reward + self.discount * (1 - done) * next_q_values
 
         # TODO(student): train the critic with the target values
-        qa_values = ...
-        q_values = ... # Compute from the data actions; see torch.gather
-        loss = ...
+        qa_values = self.critic(obs)
+        q_values = torch.gather(qa_values, -1, torch.argmax(qa_values, dim=-1, keepdim=True)).squeeze() # Compute from the data actions; see torch.gather
+        loss = self.critic_loss(q_values, target_values)
 
 
         self.critic_optimizer.zero_grad()
@@ -101,6 +109,7 @@ class DQNAgent(nn.Module):
         )
         self.critic_optimizer.step()
 
+        # 更新学习率规划器
         self.lr_scheduler.step()
 
         return {
@@ -111,7 +120,7 @@ class DQNAgent(nn.Module):
         }
 
     def update_target_critic(self):
-        # 将评估网络的参数值给目标网络
+        # 每隔一段步长，将评估网络的参数值给目标网络
         self.target_critic.load_state_dict(self.critic.state_dict())
 
     def update(
@@ -127,5 +136,9 @@ class DQNAgent(nn.Module):
         Update the DQN agent, including both the critic and target.
         """
         # TODO(student): update the critic, and the target if needed
+        critic_stats = self.update_critic(obs, action, reward, next_obs, done)
+
+        if step % self.target_update_period == 0:
+            self.update_target_critic()
 
         return critic_stats

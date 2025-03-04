@@ -39,7 +39,7 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
     # DQN只能用于离散动作状态空间
     assert discrete, "DQN only supports discrete action spaces"
     # print(config["agent_kwargs"])
-    # raise NotImplementedError("DQN only supports discrete action spaces")
+    # raise NotImplementedError("Human Stop")
 
     agent = DQNAgent(
         env.observation_space.shape,
@@ -205,6 +205,11 @@ def run_training_loop(config: dict, logger: Logger, args: argparse.Namespace):
 
 
 def main():
+    '''
+    为什么DQN不能用于连续动作空间？
+    1. DQN的输出是Q值，Q值是对每个动作的评价，对于连续动作空间，动作的数量是无限的，因此无法用Q值来评价每个动作
+    2. DQN的输出是离散的，无法直接用于连续动作空间
+    '''
     parser = argparse.ArgumentParser()
     parser.add_argument("--config_file", "-cfg", type=str, required=True)
 

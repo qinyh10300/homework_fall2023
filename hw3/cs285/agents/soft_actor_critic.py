@@ -114,6 +114,7 @@ class SoftActorCritic(nn.Module):
         """
         Compute the (ensembled) Q-values for the given state-action pair.
         """
+        # 指定新的维度dim=-1进行堆叠
         return torch.stack([critic(obs, action) for critic in self.critics], dim=0)
 
     def target_critic(self, obs: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
@@ -149,6 +150,7 @@ class SoftActorCritic(nn.Module):
 
         # TODO(student): Implement the different backup strategies.
         if self.target_critic_backup_type == "doubleq":
+
             raise NotImplementedError
         elif self.target_critic_backup_type == "min":
             raise NotImplementedError
@@ -162,6 +164,9 @@ class SoftActorCritic(nn.Module):
         # If our backup strategy removed a dimension, add it back in explicitly
         # (assume the target for each critic will be the same)
         if next_qs.shape == (batch_size,):
+            # [None]在张量前加入一个新的维度，表示批次batch_size
+            # 将 next_qs 扩展为 (self.num_critic_networks, batch_size) 的形状。
+            # contiguous()：确保扩展后的张量在内存中是连续的。
             next_qs = next_qs[None].expand((self.num_critic_networks, batch_size)).contiguous()
 
         assert next_qs.shape == (
@@ -188,11 +193,11 @@ class SoftActorCritic(nn.Module):
         with torch.no_grad():
             # TODO(student)
             # Sample from the actor
-            next_action_distribution: torch.distributions.Distribution = ...
-            next_action = ...
+            next_action_distribution: torch.distributions.Distribution = self.actor(obs)
+            next_action = next_action_distribution.sample()
 
             # Compute the next Q-values for the sampled actions
-            next_qs = ...
+            next_qs = self.target_critic(next_obs, next_action)
 
             # Handle Q-values from multiple different target critic networks (if necessary)
             # (For double-Q, clip-Q, etc.)
@@ -205,11 +210,11 @@ class SoftActorCritic(nn.Module):
 
             if self.use_entropy_bonus and self.backup_entropy:
                 # TODO(student): Add entropy bonus to the target values for SAC
-                next_action_entropy = ...
-                next_qs += ...
+                next_action_entropy = self.entropy(next_action_distribution)
+                next_qs += self.temperature * next_action_entropy.expand(self.num_critic_networks, batch_size)
 
             # Compute the target Q-value
-            target_values: torch.Tensor = ...
+            target_values: torch.Tensor = next_qs * self.discount * (1.0 - done) + reward
             assert target_values.shape == (
                 self.num_critic_networks,
                 batch_size
@@ -217,11 +222,11 @@ class SoftActorCritic(nn.Module):
 
         # TODO(student): Update the critic
         # Predict Q-values
-        q_values = ...
+        q_values = self.critic(next_obs, next_action)
         assert q_values.shape == (self.num_critic_networks, batch_size), q_values.shape
 
         # Compute loss
-        loss: torch.Tensor = ...
+        loss: torch.Tensor = self.critic_loss(q_values, target_values) 
 
         self.critic_optimizer.zero_grad()
         loss.backward()
