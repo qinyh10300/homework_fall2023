@@ -49,7 +49,7 @@ def collect_mbpo_rollout(
         next_ob = np.stack([mb_agent.get_dynamics_predictions(i, ob, ac) for i in range(mb_agent.ensemble_size)], axis=0).mean(axis=0)
         rew, _ = env.get_reward(next_ob, ac)
 
-        ob, ac, rew, next_ob = map(np.squeeze, (ob, ac, rew, next_ob))
+        ob, ac, rew, next_ob = map(np.squeeze, (ob, ac, rew, next_ob))  # map将一个函数作用在多个指定对象上
         assert next_ob.ndim == 1, next_ob.shape
         assert ob.ndim == 1, ob.shape
         assert ac.ndim == 1, ac.shape
