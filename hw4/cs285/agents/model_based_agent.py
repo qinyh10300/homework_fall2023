@@ -187,12 +187,14 @@ class ModelBasedAgent(nn.Module):
 
             # TODO(student): predict the next_obs for each rollout
             # HINT: use self.get_dynamics_predictions
-            next_obs = np.zeros(
-                (self.ensemble_size, self.mpc_num_action_sequences, self.ob_dim), dtype=np.float32
-            )
-            for i in range(self.ensemble_size):
-                for j in range(self.mpc_num_action_sequences):
-                    next_obs[i, j] = self.get_dynamics_predictions(i, obs[i, j], acs[j])
+            # next_obs = np.zeros(
+            #     (self.ensemble_size, self.mpc_num_action_sequences, self.ob_dim), dtype=np.float32
+            # )
+            # for i in range(self.ensemble_size):
+            #     for j in range(self.mpc_num_action_sequences):
+            #         next_obs[i, j] = self.get_dynamics_predictions(i, obs[i, j], acs[j])
+            # 上面这种写法太慢了（多次进行推断），可以直接用numpy的广播机制，下面的方法更快（相当于一个batch直接过网络）
+            next_obs = np.stack([self.get_dynamics_predictions(i, obs[i], acs) for i in range(self.ensemble_size)])
             assert next_obs.shape == (
                 self.ensemble_size,
                 self.mpc_num_action_sequences,
@@ -205,19 +207,66 @@ class ModelBasedAgent(nn.Module):
             # respectively, and returns a tuple of `(rewards, dones)`. You can 
             # ignore `dones`. You might want to do some reshaping to make
             # `next_obs` and `acs` 2-dimensional.
-            obs = next_obs
-            next_obs = next_obs.reshape(-1, self.ob_dim)
             acs = np.tile(acs, (self.ensemble_size, 1, 1)).reshape(-1, self.ac_dim)
-            assert next_obs.shape == (self.ensemble_size * self.mpc_num_action_sequences, self.ob_dim)
+            # assert next_obs.shape == (self.ensemble_size * self.mpc_num_action_sequences, self.ob_dim)
             assert acs.shape == (self.ensemble_size * self.mpc_num_action_sequences, self.ac_dim)
-            rewards, _ = self.env.get_reward(next_obs, acs)
+            rewards, _ = self.env.get_reward(next_obs.reshape(-1, self.ob_dim), acs)
             rewards = rewards.reshape(self.ensemble_size, self.mpc_num_action_sequences)
             assert rewards.shape == (self.ensemble_size, self.mpc_num_action_sequences)
 
             sum_of_rewards += rewards
 
+            obs = next_obs
+
         # now we average over the ensemble dimension
         return sum_of_rewards.mean(axis=0)
+
+    # def get_action(self, obs: np.ndarray):
+    #     """
+    #     Choose the best action using model-predictive control.
+
+    #     Args:
+    #         obs: (ob_dim,)
+    #     """
+    #     t1 = time.time()
+    #     # always start with uniformly random actions
+    #     action_sequences = np.random.uniform(
+    #         self.env.action_space.low,
+    #         self.env.action_space.high,
+    #         size=(self.mpc_num_action_sequences, self.mpc_horizon, self.ac_dim),
+    #     )
+
+    #     if self.mpc_strategy == "random":
+    #         # evaluate each action sequence and return the best one
+    #         rewards = self.evaluate_action_sequences(obs, action_sequences)
+    #         assert rewards.shape == (self.mpc_num_action_sequences,)
+    #         best_index = np.argmax(rewards)
+    #         # print("random used time:", time.time()-t1)
+    #         return action_sequences[best_index][0]
+    #     elif self.mpc_strategy == "cem":
+    #         elite_mean, elite_std = None, None
+    #         for i in range(self.cem_num_iters):
+    #             # TODO(student): implement the CEM algorithm
+    #             # HINT: you need a special case for i == 0 to initialize
+    #             # the elite mean and std
+    #             if i > 0:
+    #                 action_sequences = np.random.normal(elite_mean, elite_std, size=(self.mpc_num_action_sequences, self.mpc_horizon, self.ac_dim))
+    #             rewards = self.evaluate_action_sequences(obs, action_sequences)
+    #             assert rewards.shape == (self.mpc_num_action_sequences,)
+    #             tops = np.argpartition(rewards, -self.cem_num_elites)[-self.cem_num_elites:]
+    #             elites = action_sequences[tops] #shape = (self.cem_num_elites, self.mpc_horizon, self.ac_dim)
+    #             if i == 0:
+    #                 elite_mean = np.mean(elites, axis=0)
+    #                 elite_std = np.std(elites, axis=0)
+    #             else:
+    #                 # 采用了软更新方法
+    #                 elite_mean = self.cem_alpha * np.mean(elites, axis=0) + (1- self.cem_alpha) * elite_mean
+    #                 elite_std = self.cem_alpha * np.std(elites, axis=0) + (1 - self.cem_alpha) * elite_std
+    #         # print("cem used time:", time.time()-t1)
+    #         return elite_mean[0]
+
+    #     else:
+    #         raise ValueError(f"Invalid MPC strategy '{self.mpc_strategy}'")
 
     def get_action(self, obs: np.ndarray):
         """
@@ -240,7 +289,7 @@ class ModelBasedAgent(nn.Module):
             assert rewards.shape == (self.mpc_num_action_sequences,)
             best_index = np.argmax(rewards)
             t = time.time() - t1
-            print("use time: ", t) # 用于测试时间
+            # print("random use time: ", t) # 用于测试时间
             return action_sequences[best_index][0]  # 在horizon中取第一个
         elif self.mpc_strategy == "cem":
             elite_mean, elite_std = None, None
@@ -248,25 +297,27 @@ class ModelBasedAgent(nn.Module):
                 # TODO(student): implement the CEM algorithm
                 # HINT: you need a special case for i == 0 to initialize
                 # the elite mean and std
-                if i == 0:
+                if i > 0:
                     # 采用建立的CEM算法，先随机生成一些action_sequences，然后根据reward来选择精英
                     action_sequences = np.random.normal(
                         elite_mean, elite_std, size=(self.mpc_num_action_sequences, self.mpc_horizon, self.ac_dim)
                     )
                 rewards = self.evaluate_action_sequences(obs, action_sequences)
                 assert rewards.shape == (self.mpc_num_action_sequences,)
-                elite_indices = np.argsort(rewards)[-self.cem_num_elites:]
-                elites = action_sequences[elite_indices]
+                # elite_indices = np.argsort(rewards)[-self.cem_num_elites:]
+                tops = np.argpartition(rewards, -self.cem_num_elites)[-self.cem_num_elites:]
+                elites = action_sequences[tops]
                 # shape = (self.cem_num_elites, self.mpc_horizon, self.ac_dim)
                 if i == 0:
                     elite_mean = np.mean(elites, axis=0)
                     elite_std = np.std(elites, axis=0)
                 else:
                     # 采用了软更新方法
-                    elite_mean = self.cem_alpha * elite_mean + (1 - self.cem_alpha) * np.mean(elites, axis=0)
-                    elite_std = self.cem_alpha * elite_std + (1 - self.cem_alpha) * np.std(elites, axis=0)
-                t = time.time() - t1
-                print("use time: ", t) # 用于测试时间
-                return elite_mean[0]
+                    elite_mean = self.cem_alpha * np.mean(elites, axis=0) + (1- self.cem_alpha) * elite_mean
+                    elite_std = self.cem_alpha * np.std(elites, axis=0) + (1 - self.cem_alpha) * elite_std
+                # t = time.time() - t1
+                # print("cem use time: ", t) # 用于测试时间
+            return elite_mean[0]
+            # 傻逼代码缩进问题找了一小时
         else:
             raise ValueError(f"Invalid MPC strategy '{self.mpc_strategy}'")

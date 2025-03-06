@@ -63,7 +63,7 @@ def sample_trajectory(
         ob = next_ob  # jump to next timestep
 
         # end the rollout if the rollout ended
-        print(done, steps, max_length)
+        # print(done, steps, max_length)
         if done or steps > max_length:
             break
 
@@ -111,7 +111,7 @@ def sample_n_trajectories(
     trajs = []
     for i in tqdm(range(ntraj), desc="Collecting rollouts"):
         # collect rollout
-        print(i, ntraj)
+        # print(i, ntraj)
         traj = sample_trajectory(env, policy, max_length, render)
         trajs.append(traj)
     return trajs
