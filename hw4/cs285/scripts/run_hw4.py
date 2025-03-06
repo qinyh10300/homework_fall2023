@@ -125,18 +125,21 @@ def run_training_loop(
         print(f"\n\n********** Iteration {itr} ************")
         # collect data
         print("Collecting data...")
+        # print(itr)
         if itr == 0:
             # TODO(student): collect at least config["initial_batch_size"] transitions with a random policy
             # HINT: Use `utils.RandomPolicy` and `utils.sample_trajectories`
-            trajs, envsteps_this_batch = utils.sample_n_trajectories(
+            # print("start_sample_n_trajectories")
+            trajs, envsteps_this_batch = utils.sample_trajectories(
                 env,
                 utils.RandomPolicy(env),
                 config["initial_batch_size"],
                 ep_len,
             )
+            # print("finish_sample_n_trajectories")
         else:
             # TODO(student): collect at least config["batch_size"] transitions with our `actor_agent`
-            trajs, envsteps_this_batch = utils.sample_n_trajectories(
+            trajs, envsteps_this_batch = utils.sample_trajectories(
                 env,
                 actor_agent,
                 config["batch_size"],
@@ -196,6 +199,7 @@ def run_training_loop(
             plt.ylabel("Loss")
             plt.xlabel("Step")
             plt.savefig(os.path.join(logger._log_dir, "itr_0_loss_curve.png"))
+            # print("save", os.path.join(logger._log_dir, "itr_0_loss_curve.png"))
 
         # log the average loss
         loss = np.mean(all_losses)

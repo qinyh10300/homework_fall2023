@@ -6,6 +6,7 @@ import gym
 import cv2
 from cs285.infrastructure import pytorch_util as ptu
 from typing import Dict, Tuple, List
+from tqdm import tqdm
 
 ############################################
 ############################################
@@ -62,6 +63,7 @@ def sample_trajectory(
         ob = next_ob  # jump to next timestep
 
         # end the rollout if the rollout ended
+        print(done, steps, max_length)
         if done or steps > max_length:
             break
 
@@ -107,8 +109,9 @@ def sample_n_trajectories(
 ):
     """Collect ntraj rollouts."""
     trajs = []
-    for i in range(ntraj):
+    for i in tqdm(range(ntraj), desc="Collecting rollouts"):
         # collect rollout
+        print(i, ntraj)
         traj = sample_trajectory(env, policy, max_length, render)
         trajs.append(traj)
     return trajs

@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch
 import gym
 from cs285.infrastructure import pytorch_util as ptu
+import time
 
 
 class ModelBasedAgent(nn.Module):
@@ -143,7 +144,7 @@ class ModelBasedAgent(nn.Module):
         # HINT: make sure to *unnormalize* the NN outputs (observation deltas)
         # Same hints as `update` above, avoid nasty divide-by-zero errors when
         # normalizing inputs!
-        obs_acs = torch.cat([obs, acs], dim=1)
+        obs_acs = torch.cat([obs, acs], dim=-1)
         obs_acs_normalized = (obs_acs - self.obs_acs_mean) / (self.obs_acs_std + 1e-8)
         pred_delta_obs_normalized = self.dynamics_models[i](obs_acs_normalized)
         pred_delta_obs = pred_delta_obs_normalized * self.obs_delta_std + self.obs_delta_mean
@@ -170,16 +171,19 @@ class ModelBasedAgent(nn.Module):
             (self.ensemble_size, self.mpc_num_action_sequences), dtype=np.float32
         )
         # We need to repeat our starting obs for each of the rollouts.
+        # print(f"obs.shape: {obs.shape}")
         obs = np.tile(obs, (self.ensemble_size, self.mpc_num_action_sequences, 1))
+        # print(f"obs.shape: {obs.shape}")
 
         # TODO(student): for each batch of actions in in the horizon...
         for acs in action_sequences.transpose(1, 0, 2):  # 相当于交换了第0维和第1维，第2维顺序不变
             assert acs.shape == (self.mpc_num_action_sequences, self.ac_dim)
+            # print(f"obs.shape: {obs.shape}")
             assert obs.shape == (
                 self.ensemble_size,
                 self.mpc_num_action_sequences,
                 self.ob_dim,
-            )
+            ), f"obs.shape: {obs.shape}"
 
             # TODO(student): predict the next_obs for each rollout
             # HINT: use self.get_dynamics_predictions
@@ -201,6 +205,7 @@ class ModelBasedAgent(nn.Module):
             # respectively, and returns a tuple of `(rewards, dones)`. You can 
             # ignore `dones`. You might want to do some reshaping to make
             # `next_obs` and `acs` 2-dimensional.
+            obs = next_obs
             next_obs = next_obs.reshape(-1, self.ob_dim)
             acs = np.tile(acs, (self.ensemble_size, 1, 1)).reshape(-1, self.ac_dim)
             assert next_obs.shape == (self.ensemble_size * self.mpc_num_action_sequences, self.ob_dim)
@@ -210,8 +215,6 @@ class ModelBasedAgent(nn.Module):
             assert rewards.shape == (self.ensemble_size, self.mpc_num_action_sequences)
 
             sum_of_rewards += rewards
-
-            obs = next_obs
 
         # now we average over the ensemble dimension
         return sum_of_rewards.mean(axis=0)
@@ -223,6 +226,7 @@ class ModelBasedAgent(nn.Module):
         Args:
             obs: (ob_dim,)
         """
+        t1 = time.time()
         # always start with uniformly random actions
         action_sequences = np.random.uniform(
             self.env.action_space.low,
@@ -235,6 +239,8 @@ class ModelBasedAgent(nn.Module):
             rewards = self.evaluate_action_sequences(obs, action_sequences)
             assert rewards.shape == (self.mpc_num_action_sequences,)
             best_index = np.argmax(rewards)
+            t = time.time() - t1
+            print("use time: ", t) # 用于测试时间
             return action_sequences[best_index][0]  # 在horizon中取第一个
         elif self.mpc_strategy == "cem":
             elite_mean, elite_std = None, None
@@ -259,6 +265,8 @@ class ModelBasedAgent(nn.Module):
                     # 采用了软更新方法
                     elite_mean = self.cem_alpha * elite_mean + (1 - self.cem_alpha) * np.mean(elites, axis=0)
                     elite_std = self.cem_alpha * elite_std + (1 - self.cem_alpha) * np.std(elites, axis=0)
+                t = time.time() - t1
+                print("use time: ", t) # 用于测试时间
                 return elite_mean[0]
         else:
             raise ValueError(f"Invalid MPC strategy '{self.mpc_strategy}'")
