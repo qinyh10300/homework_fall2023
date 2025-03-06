@@ -115,6 +115,7 @@ class SoftActorCritic(nn.Module):
         Compute the (ensembled) Q-values for the given state-action pair.
         """
         # 指定新的维度dim=-1进行堆叠
+        # print("-"*30, obs.shape, action.shape)
         return torch.stack([critic(obs, action) for critic in self.critics], dim=0)
 
     def target_critic(self, obs: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
@@ -314,6 +315,10 @@ class SoftActorCritic(nn.Module):
         # rsample()函数就是使用了reparametrize trick，可以直接计算梯度（方差比reinforce方法小，但是只适用于连续场景）
 
         # TODO(student): Compute Q-values for the sampled state-action pair
+        # print("*"*10, obs.shape, action.shape, self.num_actor_samples)
+        obs = obs.unsqueeze(0).expand(self.num_actor_samples, *obs.shape)
+        # print("*"*10, obs.shape, action.shape, self.num_actor_samples)
+        # shape = (self.num_actor_samples, batch_size, obs_dim)
         q_values = self.critic(obs, action)  # 会不会对obs进行自动广播
         # shape = (self.num_critic_networks, self.num_actor_samples, batch_size)
 
@@ -372,12 +377,16 @@ class SoftActorCritic(nn.Module):
         for _ in range(self.num_critic_updates):
             critic_infos.append(
                 self.update_critic(
-                    observations, actions, rewards, next_observations, dones
+                    ptu.from_numpy(observations), 
+                    ptu.from_numpy(actions), 
+                    ptu.from_numpy(rewards), 
+                    ptu.from_numpy(next_observations), 
+                    ptu.from_numpy(dones)
                 )
             )
 
         # TODO(student): Update the actor
-        actor_info = self.update_actor(observations)
+        actor_info = self.update_actor(ptu.from_numpy(observations))
 
         # TODO(student): Perform either hard or soft target updates.
         # Relevant variables:
