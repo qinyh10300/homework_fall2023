@@ -257,7 +257,8 @@ class SoftActorCritic(nn.Module):
         # shape = (sample_points, batch_size, action_dim)
         log_probs = action_distribution.log_prob(sample_actions)
         # shape = (sample_points, batch_size)
-        entropy = -torch.mean(torch.sum(log_probs, dim=0))
+        entropy = torch.mean(-log_probs, dim=0)
+        # entropy = -torch.mean(torch.sum(log_probs, dim=0))  这种方法是错误的，因为我们需要对每个batch元素求平均
         # shape = (batch_size,)
         return entropy
         # return action_distribution.entropy() # 这样子直接返回熵值了，但是我们需要计算梯度，所以不能这样子
@@ -324,6 +325,7 @@ class SoftActorCritic(nn.Module):
 
         # TODO(student): Compute the actor loss
         loss = -q_values.mean()
+        # print("*"*20)
 
         return loss, torch.mean(self.entropy(action_distribution))
 
